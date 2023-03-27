@@ -19,7 +19,7 @@ type LocalStore struct {
 	n *maelstrom.Node
 	l *log.Logger
 
-	db []int64
+	db map[int64]struct{}
 	mu sync.Mutex
 
 	watermarksByNodeId map[string]int64
@@ -47,7 +47,7 @@ func (ls *LocalStore) PollNeighbors() {
 	ls.watermarksMu.Lock()
 	defer ls.watermarksMu.Unlock()
 
-	highWatermarks = make(map[string]int64)
+	highWatermarks := make(map[string]int64)
 	for neighborId, lwm := range ls.watermarksByNodeId {
 		highWatermarks[neighborId] = lwm
 	}
@@ -56,8 +56,10 @@ func (ls *LocalStore) PollNeighbors() {
 			req := make(map[string]any)
 			req["type"] = "GetHighWatermark"
 
-			resp, err := ls.n.SyncRPC(context.WithTimeout(context.Background(), 100*time.Millisecond), neighborId, req)
-			if err {
+			// throw away cancel func
+			ctx, _ := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			resp, err := ls.n.SyncRPC(ctx, neighborId, req)
+			if err != nil {
 				return
 			}
 			var respBody struct {
@@ -119,7 +121,7 @@ func (ls *LocalStore) HandleBroadcast(req maelstrom.Message) error {
 		//ls.n.Send(dest, make(map[string]any))
 	}
 
-	ls.db = append(ls.db, reqBody.Message)
+	ls.db[reqBody.Message] = struct{}{}
 	respBody["type"] = "broadcast_ok"
 	respBody["in_reply_to"] = reqBody.MsgId
 
@@ -136,8 +138,10 @@ func (ls *LocalStore) HandleRead(req maelstrom.Message) error {
 	ls.mu.Lock()
 	defer ls.mu.Unlock()
 
-	c := make([]int64, len(ls.db))
-	copy(c, ls.db)
+	c := make([]int64, 0)
+	for val, _ := range ls.db {
+		c = append(c, val)
+	}
 	respBody["type"] = "read_ok"
 	respBody["in_reply_to"] = reqBody["msg_id"]
 	respBody["messages"] = c
@@ -160,8 +164,9 @@ func (ls *LocalStore) HandleTopology(req maelstrom.Message) error {
 
 func main() {
 	ls := LocalStore{
-		n: maelstrom.NewNode(),
-		l: log.Default(),
+		n:  maelstrom.NewNode(),
+		l:  log.Default(),
+		db: make(map[int64]struct{}),
 	}
 
 	if err := ls.Run(); err != nil {
