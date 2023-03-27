@@ -28,6 +28,7 @@ func main() {
 
 	n.Handle("broadcast", func(req maelstrom.Message) error {
 		var reqBody struct {
+			MsgId   string `json:"msg_id"`
 			Type    string `json:"type"`
 			Message int64  `json:"message"`
 		}
@@ -40,6 +41,7 @@ func main() {
 		defer av.mu.Unlock()
 
 		av.val = append(av.val, reqBody.Message)
+		respBody["msg_id"] = reqBody.MsgId
 		respBody["type"] = "broadcast_ok"
 
 		return n.Reply(req, respBody)
@@ -55,11 +57,10 @@ func main() {
 		av.mu.Lock()
 		defer av.mu.Unlock()
 
-		// l.Printf("Received maelstrom message %#v", req)
-
 		c := make([]int64, len(av.val))
 		copy(c, av.val)
 		respBody["type"] = "read_ok"
+		respBody["msg_id"] = reqBody["msg_id"]
 		respBody["messages"] = c
 
 		return n.Reply(req, respBody)
@@ -72,8 +73,8 @@ func main() {
 		}
 		respBody := make(map[string]any)
 
-		//l.Printf("Received maelstrom message %#v", req)
 		respBody["type"] = "topology_ok"
+		respBody["msg_id"] = reqBody["msg_id"]
 
 		return n.Reply(req, respBody)
 	})
