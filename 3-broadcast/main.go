@@ -53,13 +53,16 @@ func (ls *LocalStore) Run() error {
 	return nil
 }
 
+// Caller MUST lock ls.dbMu
+func (ls *LocalStore) Lwm() int64 {
+	return int64(len(ls.db))
+}
+
 func (ls *LocalStore) PollNeighbors(parentCtx context.Context) {
 	ls.dbMu.Lock()
 	ls.lwmMu.Lock()
 	defer ls.lwmMu.Unlock()
 	defer ls.dbMu.Unlock()
-
-	ls.l.Printf("polling neighbors")
 
 	type Update struct {
 		Hwm int64   `json:"high_watermark"`
@@ -68,6 +71,7 @@ func (ls *LocalStore) PollNeighbors(parentCtx context.Context) {
 
 	polls := make(map[string]Update)
 	neighbors := ls.n.NodeIDs()
+	ls.l.Printf("Polling neighbors (lwm=%d): %#v", ls.Lwm(), neighbors)
 
 	var wg sync.WaitGroup
 	wg.Add(len(neighbors))
@@ -77,17 +81,17 @@ func (ls *LocalStore) PollNeighbors(parentCtx context.Context) {
 			wg.Done()
 			continue
 		}
-		go func() {
+		go func(dst string) {
 			defer wg.Done()
 
 			req := make(map[string]any)
 			req["type"] = "GetHighWatermark"
-			req["low_watermark"] = len(ls.db)
+			req["low_watermark"] = ls.Lwm()
 
 			ctx, cancel := context.WithTimeout(parentCtx, 100*time.Millisecond)
 			defer cancel()
 
-			resp, err := ls.n.SyncRPC(ctx, neighborId, req)
+			resp, err := ls.n.SyncRPC(ctx, dst, req)
 			if err != nil {
 				return
 			}
@@ -95,8 +99,8 @@ func (ls *LocalStore) PollNeighbors(parentCtx context.Context) {
 			if err := json.Unmarshal(resp.Body, &respBody); err != nil {
 				return
 			}
-			polls[neighborId] = respBody
-		}()
+			polls[dst] = respBody
+		}(neighborId)
 	}
 
 	wg.Wait()
@@ -112,13 +116,13 @@ func (ls *LocalStore) PollNeighbors(parentCtx context.Context) {
 	}
 }
 
+// TODO: implement described optimization
 // If LWM == HWM, returns empty values slice
 // If LWM != HWM, returns all values in local DB - cannot know which values client doesn't know about
 func (ls *LocalStore) HandleGetHighWatermark(req maelstrom.Message) error {
 	var reqBody struct {
 		MsgId int64  `json:"msg_id"`
 		Type  string `json:"type"`
-		Lwm   int64  `json:"low_watermark"`
 	}
 	if err := json.Unmarshal(req.Body, &reqBody); err != nil {
 		return err
@@ -134,7 +138,7 @@ func (ls *LocalStore) HandleGetHighWatermark(req maelstrom.Message) error {
 	}
 	respBody["in_reply_to"] = reqBody.MsgId
 	respBody["type"] = "GetHighWatermark_ok"
-	respBody["high_watermark"] = len(ls.db)
+	respBody["high_watermark"] = ls.Lwm()
 	respBody["db"] = c
 
 	return ls.n.Reply(req, respBody)
