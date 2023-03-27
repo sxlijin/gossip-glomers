@@ -8,6 +8,7 @@ plugins:
       uri: https://github.com/trunk-io/plugins
 lint:
   enabled:
+    - gofmt@1.19.3
     - golangci-lint@1.52.1
     - git-diff-check
     - gitleaks@8.16.1
