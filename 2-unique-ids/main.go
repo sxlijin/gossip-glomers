@@ -9,12 +9,16 @@ import (
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
 )
 
+type AtomicInt struct {
+	val int64
+	mu  sync.Mutex
+}
+
 func main() {
 	n := maelstrom.NewNode()
 	l := log.Default()
 
-	var id int64 = 0
-	var mu sync.Mutex
+	var id AtomicInt
 
 	n.Handle("generate", func(msg maelstrom.Message) error {
 		// Unmarshal the message body as an loosely-typed map.
@@ -23,13 +27,13 @@ func main() {
 			return err
 		}
 
-		mu.Lock()
-		defer mu.Unlock()
+		id.mu.Lock()
+		defer id.mu.Unlock()
 
 		l.Printf("Received maelstrom message %#v", msg)
 		body["type"] = "generate_ok"
-		body["id"] = fmt.Sprintf("%s-%d", msg.Dest, id)
-		id += 1
+		body["id"] = fmt.Sprintf("%s-%d", msg.Dest, id.val)
+		id.val += 1
 
 		// Echo the original message back with the updated message type.
 		return n.Reply(msg, body)
