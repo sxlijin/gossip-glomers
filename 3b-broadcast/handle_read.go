@@ -6,9 +6,8 @@ import (
 )
 
 type ReadRequest struct {
-	MsgId   int64  `json:"msg_id,omitempty"`
-	Type    string `json:"type"`
-	Message int64  `json:"message"`
+	MsgId int64  `json:"msg_id,omitempty"`
+	Type  string `json:"type"`
 }
 
 type ReadResponse struct {

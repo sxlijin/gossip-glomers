@@ -59,7 +59,49 @@ func (ls *LocalStore) Unlocked_ApplyWrite(val int64) {
 	ls.db[val] = struct{}{}
 }
 
-func (ls *LocalStore) PollNeighbors(parentCtx context.Context) {
+func (ls *LocalStore) ManagePollers(ctx context.Context) {
+	pollers := make(map[string]struct{})
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(300 * time.Millisecond):
+			for _, id := range ls.n.NodeIDs() {
+				go ls.PollNode(ctx, id)
+				pollers[id] = struct{}{}
+			}
+		}
+	}
+}
+
+func (ls *LocalStore) PollNode(pctx context.Context, nodeId string) {
+	for {
+		select {
+		case <-pctx.Done():
+			return
+		case <-time.After(300 * time.Millisecond):
+			ctx, cancel := context.WithTimeout(pctx, 100*time.Millisecond)
+
+			req := ReadRequest{
+				Type: "read",
+			}
+			msg, _ := ls.n.SyncRPC(ctx, nodeId, req)
+			var resp ReadResponse
+			json.Unmarshal(msg.Body, &resp)
+
+			ls.dbMu.Lock()
+
+			for _, val := range resp.Messages {
+				ls.Unlocked_ApplyWrite(val)
+			}
+
+			ls.dbMu.Unlock()
+			cancel()
+		}
+	}
+}
+
+func (ls *LocalStore) PollNeighbors(ctx context.Context) {
 	ls.l.Printf("Attempting to poll neighbors")
 }
 
