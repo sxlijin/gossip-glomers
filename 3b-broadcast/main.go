@@ -55,9 +55,8 @@ func (ls *LocalStore) Run() error {
 	return nil
 }
 
-// Caller MUST lock ls.dbMu
-func (ls *LocalStore) Lwm() int64 {
-	return int64(len(ls.db))
+func (ls *LocalStore) Unlocked_ApplyWrite(val int64) {
+	ls.db[val] = struct{}{}
 }
 
 func (ls *LocalStore) PollNeighbors(parentCtx context.Context) {
@@ -86,73 +85,8 @@ func (ls *LocalStore) HandleGetHighWatermark(req maelstrom.Message) error {
 	}
 	respBody["in_reply_to"] = reqBody.MsgId
 	respBody["type"] = "GetHighWatermark_ok"
-	respBody["high_watermark"] = ls.Lwm()
+	respBody["high_watermark"] = len(ls.db)
 	respBody["db"] = c
-
-	return ls.n.Reply(req, respBody)
-}
-
-func (ls *LocalStore) HandleBroadcast(req maelstrom.Message) error {
-	var reqBody struct {
-		MsgId   int64  `json:""`
-		Type    string `json:"type"`
-		Message int64  `json:"message"`
-	}
-	if err := json.Unmarshal(req.Body, &reqBody); err != nil {
-		return err
-	}
-	respBody := make(map[string]any)
-
-	ls.dbMu.Lock()
-	defer ls.dbMu.Unlock()
-
-	for _, dest := range ls.n.NodeIDs() {
-		// if dest is self
-		if dest == ls.n.ID() {
-			continue
-		}
-
-		// need to make every target receive my high watermark
-		//ls.n.Send(dest, make(map[string]any))
-	}
-
-	ls.db[reqBody.Message] = struct{}{}
-	respBody["type"] = "broadcast_ok"
-	respBody["in_reply_to"] = reqBody.MsgId
-
-	return ls.n.Reply(req, respBody)
-}
-
-func (ls *LocalStore) HandleRead(req maelstrom.Message) error {
-	var reqBody map[string]any
-	if err := json.Unmarshal(req.Body, &reqBody); err != nil {
-		return err
-	}
-	respBody := make(map[string]any)
-
-	ls.dbMu.Lock()
-	defer ls.dbMu.Unlock()
-
-	c := make([]int64, 0)
-	for val, _ := range ls.db {
-		c = append(c, val)
-	}
-	respBody["type"] = "read_ok"
-	respBody["in_reply_to"] = reqBody["msg_id"]
-	respBody["messages"] = c
-
-	return ls.n.Reply(req, respBody)
-}
-
-func (ls *LocalStore) HandleTopology(req maelstrom.Message) error {
-	var reqBody map[string]any
-	if err := json.Unmarshal(req.Body, &reqBody); err != nil {
-		return err
-	}
-	respBody := make(map[string]any)
-
-	respBody["type"] = "topology_ok"
-	respBody["in_reply_to"] = reqBody["msg_id"]
 
 	return ls.n.Reply(req, respBody)
 }
