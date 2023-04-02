@@ -78,7 +78,7 @@ func (ls *LocalStore) PollNode(pctx context.Context, nodeId string) {
 		case <-pctx.Done():
 			return
 		case <-time.After(1 * time.Second):
-			ctx, cancel := context.WithTimeout(pctx, 100*time.Millisecond)
+			ctx, cancel := context.WithTimeout(pctx, 300*time.Millisecond)
 
 			req := ReadRequest{
 				Type: "read",
