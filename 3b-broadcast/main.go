@@ -14,6 +14,8 @@ type LocalStore struct {
 	n *maelstrom.Node
 	l *log.Logger
 
+	init sync.WaitGroup
+
 	db   map[int64]struct{}
 	dbMu sync.Mutex
 
@@ -24,6 +26,8 @@ type LocalStore struct {
 func (ls *LocalStore) Run() error {
 	ls.l.SetFlags(log.Ltime | log.Lmicroseconds)
 
+	ls.init.Add(1)
+
 	// Maelstrom test handlers
 	ls.n.Handle("broadcast", ls.HandleBroadcast)
 	ls.n.Handle("read", ls.HandleRead)
@@ -33,17 +37,7 @@ func (ls *LocalStore) Run() error {
 	ls.n.Handle("GetHighWatermark", ls.HandleGetHighWatermark)
 
 	ctx, cancel := context.WithCancel(context.Background())
-
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(300 * time.Millisecond):
-				ls.PollNeighbors(ctx)
-			}
-		}
-	}()
+	go ls.ManagePollers(ctx)
 
 	if err := ls.n.Run(); err != nil {
 		ls.l.Fatal(err)
@@ -60,6 +54,8 @@ func (ls *LocalStore) Unlocked_ApplyWrite(val int64) {
 }
 
 func (ls *LocalStore) ManagePollers(ctx context.Context) {
+	ls.init.Wait()
+
 	pollers := make(map[string]struct{})
 	for {
 		select {
@@ -67,8 +63,10 @@ func (ls *LocalStore) ManagePollers(ctx context.Context) {
 			return
 		case <-time.After(300 * time.Millisecond):
 			for _, id := range ls.n.NodeIDs() {
-				go ls.PollNode(ctx, id)
-				pollers[id] = struct{}{}
+				if _, present := pollers[id]; !present {
+					go ls.PollNode(ctx, id)
+					pollers[id] = struct{}{}
+				}
 			}
 		}
 	}
@@ -79,7 +77,7 @@ func (ls *LocalStore) PollNode(pctx context.Context, nodeId string) {
 		select {
 		case <-pctx.Done():
 			return
-		case <-time.After(300 * time.Millisecond):
+		case <-time.After(1 * time.Second):
 			ctx, cancel := context.WithTimeout(pctx, 100*time.Millisecond)
 
 			req := ReadRequest{

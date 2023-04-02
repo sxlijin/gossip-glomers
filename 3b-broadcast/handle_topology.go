@@ -24,6 +24,8 @@ func makeTopologyResponse(req *TopologyRequest) TopologyResponse {
 }
 
 func (ls *LocalStore) HandleTopology(msg maelstrom.Message) error {
+	ls.init.Done()
+
 	var req TopologyRequest
 	if err := json.Unmarshal(msg.Body, &req); err != nil {
 		return err
