@@ -22,6 +22,8 @@ type LocalStore struct {
 }
 
 func (ls *LocalStore) Run() error {
+	ls.l.SetFlags(log.Ltime | log.Lmicroseconds)
+
 	// Maelstrom test handlers
 	ls.n.Handle("broadcast", ls.HandleBroadcast)
 	ls.n.Handle("read", ls.HandleRead)
@@ -59,61 +61,7 @@ func (ls *LocalStore) Lwm() int64 {
 }
 
 func (ls *LocalStore) PollNeighbors(parentCtx context.Context) {
-	ls.dbMu.Lock()
-	ls.lwmMu.Lock()
-	defer ls.lwmMu.Unlock()
-	defer ls.dbMu.Unlock()
-
-	type Update struct {
-		Hwm int64   `json:"high_watermark"`
-		Db  []int64 `json:"db"`
-	}
-
-	polls := make(map[string]Update)
-	neighbors := ls.n.NodeIDs()
-	ls.l.Printf("Polling neighbors (lwm=%d): %#v", ls.Lwm(), neighbors)
-
-	var wg sync.WaitGroup
-	wg.Add(len(neighbors))
-
-	for _, neighborId := range neighbors {
-		if ls.n.ID() == neighborId {
-			wg.Done()
-			continue
-		}
-		go func(dst string) {
-			defer wg.Done()
-
-			req := make(map[string]any)
-			req["type"] = "GetHighWatermark"
-			req["low_watermark"] = ls.Lwm()
-
-			ctx, cancel := context.WithTimeout(parentCtx, 100*time.Millisecond)
-			defer cancel()
-
-			resp, err := ls.n.SyncRPC(ctx, dst, req)
-			if err != nil {
-				return
-			}
-			var respBody Update
-			if err := json.Unmarshal(resp.Body, &respBody); err != nil {
-				return
-			}
-			polls[dst] = respBody
-		}(neighborId)
-	}
-
-	wg.Wait()
-
-	for neighborId, update := range polls {
-		if ls.lwm[neighborId] == update.Hwm {
-			continue
-		}
-		ls.lwm[neighborId] = update.Hwm
-		for _, val := range update.Db {
-			ls.db[val] = struct{}{}
-		}
-	}
+	ls.l.Printf("Attempting to poll neighbors")
 }
 
 // TODO: implement described optimization
