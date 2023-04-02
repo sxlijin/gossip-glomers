@@ -26,7 +26,12 @@ type LocalStore struct {
 func (ls *LocalStore) Run() error {
 	ls.l.SetFlags(log.Ltime | log.Lmicroseconds)
 
+	// Hook into init, but rely on the built-in response handler
 	ls.init.Add(1)
+	ls.n.Handle("init", func(msg maelstrom.Message) error {
+		ls.init.Done()
+		return nil
+	})
 
 	// Maelstrom test handlers
 	ls.n.Handle("broadcast", ls.HandleBroadcast)
@@ -63,6 +68,9 @@ func (ls *LocalStore) ManagePollers(ctx context.Context) {
 			return
 		case <-time.After(300 * time.Millisecond):
 			for _, id := range ls.n.NodeIDs() {
+				if id == ls.n.ID() {
+					continue
+				}
 				if _, present := pollers[id]; !present {
 					go ls.PollNode(ctx, id)
 					pollers[id] = struct{}{}
