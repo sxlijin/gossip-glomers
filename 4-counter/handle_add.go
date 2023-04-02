@@ -1,18 +1,19 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
 )
 
 type AddRequest struct {
-	MsgId   int64  `json:"msg_id,omitempty"`
-	Type    string `json:"type"`
-	Message int64  `json:"message"`
+	MsgId int    `json:"msg_id,omitempty"`
+	Type  string `json:"type"`
+	Delta int    `json:"delta"`
 }
 
 type AddResponse struct {
-	InReplyTo int64  `json:"msg_id,omitempty"`
+	InReplyTo int    `json:"msg_id,omitempty"`
 	Type      string `json:"type"`
 }
 
@@ -29,6 +30,14 @@ func (ls *LocalStore) HandleAdd(msg maelstrom.Message) error {
 		return err
 	}
 	resp := makeAddResponse(&req)
+
+	ls.dbMu.Lock()
+	defer ls.dbMu.Unlock()
+
+	ctx := context.Background()
+
+	ls.db[ls.n.ID()] += req.Delta
+	ls.kv.Write(ctx, ls.n.ID(), ls.db[ls.n.ID()])
 
 	return ls.n.Reply(msg, resp)
 }

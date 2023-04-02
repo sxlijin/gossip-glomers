@@ -6,21 +6,21 @@ import (
 )
 
 type ReadRequest struct {
-	MsgId int64  `json:"msg_id,omitempty"`
+	MsgId int    `json:"msg_id,omitempty"`
 	Type  string `json:"type"`
 }
 
 type ReadResponse struct {
-	InReplyTo int64   `json:"msg_id,omitempty"`
-	Type      string  `json:"type"`
-	Messages  []int64 `json:"messages"`
+	InReplyTo int    `json:"msg_id,omitempty"`
+	Type      string `json:"type"`
+	Value     int    `json:"value"`
 }
 
 func makeReadResponse(req *ReadRequest) ReadResponse {
 	return ReadResponse{
 		InReplyTo: req.MsgId,
 		Type:      "read_ok",
-		Messages:  make([]int64, 0),
+		Value:     0,
 	}
 }
 
@@ -34,8 +34,8 @@ func (ls *LocalStore) HandleRead(msg maelstrom.Message) error {
 	ls.dbMu.Lock()
 	defer ls.dbMu.Unlock()
 
-	for val, _ := range ls.db {
-		resp.Messages = append(resp.Messages, val)
+	for _, val := range ls.db {
+		resp.Value += val
 	}
 
 	return ls.n.Reply(msg, resp)

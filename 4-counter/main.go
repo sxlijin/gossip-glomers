@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"sync"
 	"time"
@@ -11,16 +10,14 @@ import (
 )
 
 type LocalStore struct {
-	n *maelstrom.Node
-	l *log.Logger
+	n  *maelstrom.Node
+	kv *maelstrom.KV
+	l  *log.Logger
 
 	init sync.WaitGroup
 
-	db   map[int64]struct{}
+	db   map[string]int
 	dbMu sync.Mutex
-
-	lwm   map[string]int64
-	lwmMu sync.Mutex
 }
 
 func (ls *LocalStore) Run() error {
@@ -50,8 +47,8 @@ func (ls *LocalStore) Run() error {
 	return nil
 }
 
-func (ls *LocalStore) Unlocked_ApplyWrite(val int64) {
-	ls.db[val] = struct{}{}
+func (ls *LocalStore) Unlocked_ApplyDelta(nodeId string, delta int) {
+	ls.db[nodeId] += delta
 }
 
 func (ls *LocalStore) ManagePollers(ctx context.Context) {
@@ -62,7 +59,7 @@ func (ls *LocalStore) ManagePollers(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(300 * time.Millisecond):
+		case <-time.After(1 * time.Second):
 			for _, id := range ls.n.NodeIDs() {
 				if id == ls.n.ID() {
 					continue
@@ -83,21 +80,9 @@ func (ls *LocalStore) PollNode(pctx context.Context, nodeId string) {
 			return
 		case <-time.After(1 * time.Second):
 			ctx, cancel := context.WithTimeout(pctx, 300*time.Millisecond)
-
-			req := ReadRequest{
-				Type: "read",
+			if val, err := ls.kv.ReadInt(ctx, nodeId); err == nil {
+				ls.db[nodeId] = val
 			}
-			msg, _ := ls.n.SyncRPC(ctx, nodeId, req)
-			var resp ReadResponse
-			json.Unmarshal(msg.Body, &resp)
-
-			ls.dbMu.Lock()
-
-			for _, val := range resp.Messages {
-				ls.Unlocked_ApplyWrite(val)
-			}
-
-			ls.dbMu.Unlock()
 			cancel()
 		}
 	}
@@ -108,11 +93,12 @@ func (ls *LocalStore) PollNeighbors(ctx context.Context) {
 }
 
 func main() {
+	n := maelstrom.NewNode()
 	ls := LocalStore{
-		n:   maelstrom.NewNode(),
-		l:   log.Default(),
-		db:  make(map[int64]struct{}),
-		lwm: make(map[string]int64),
+		n:  n,
+		kv: maelstrom.NewSeqKV(n),
+		l:  log.Default(),
+		db: make(map[string]int),
 	}
 
 	if err := ls.Run(); err != nil {
