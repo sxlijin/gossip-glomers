@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"log"
 	"sync"
 
@@ -14,8 +13,34 @@ type LocalStore struct {
 
 	init sync.WaitGroup
 
-	db   map[string][]int
+	db   map[int]int
 	dbMu sync.Mutex
+}
+
+type OpType string
+
+const (
+	WriteOp = "w"
+	ReadOp  = "r"
+)
+
+type Op struct {
+	Type  OpType
+	Key   int
+	Value int
+}
+
+func (ls *LocalStore) Unlocked_ApplyOps(ops []Op) {
+	for i, op := range ops {
+		switch op.Type {
+		case WriteOp:
+			ls.db[op.Key] = op.Value
+		case ReadOp:
+			ops[i].Value = ls.db[op.Key]
+		default:
+			ls.l.Printf("Unrecognized op, cannot apply")
+		}
+	}
 }
 
 func (ls *LocalStore) Run() error {
@@ -29,7 +54,7 @@ func (ls *LocalStore) Run() error {
 	})
 
 	// Maelstrom test handlers
-	ls.n.Handle("Txn", ls.HandleTxn)
+	ls.n.Handle("txn", ls.HandleTxn)
 
 	if err := ls.n.Run(); err != nil {
 		ls.l.Fatal(err)
@@ -44,28 +69,10 @@ func main() {
 	ls := LocalStore{
 		n:  n,
 		l:  log.Default(),
-		db: make(map[string][]int),
+		db: make(map[int]int),
 	}
 
-	i := 5
-	ls.l.Printf("%d", i)
-
-	msg := `{
-  "type": "txn",
-  "msg_id": 3,
-  "txn": [
-    ["r", 1, null],
-    ["w", 1, 6],
-    ["w", 2, 9]
-  ]
-}`
-	var req TxnRequest
-	if err := json.Unmarshal([]byte(msg), &req); err != nil {
-		ls.l.Printf("unmarshal err: %s", err)
+	if err := ls.Run(); err != nil {
+		log.Fatal(err)
 	}
-	ls.l.Printf("unmarshal -> %#v", req)
-
-	// if err := ls.Run(); err != nil {
-	// 	log.Fatal(err)
-	// }
 }
