@@ -37,7 +37,9 @@ func (ls *LocalStore) HandleAdd(msg maelstrom.Message) error {
 	ctx := context.Background()
 
 	ls.db[ls.n.ID()] += req.Delta
-	ls.kv.Write(ctx, ls.n.ID(), ls.db[ls.n.ID()])
+	if err := ls.kv.Write(ctx, ls.n.ID(), ls.db[ls.n.ID()]); err != nil {
+		ls.l.Printf("Error occurred while reading from the KV store: %s", err)
+	}
 
 	return ls.n.Reply(msg, resp)
 }

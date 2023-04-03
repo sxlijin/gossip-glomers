@@ -16,7 +16,7 @@ type LocalStore struct {
 
 	init sync.WaitGroup
 
-	db   map[string]int
+	db   map[string][]int
 	dbMu sync.Mutex
 }
 
@@ -50,7 +50,7 @@ func (ls *LocalStore) Run() error {
 }
 
 func (ls *LocalStore) Unlocked_ApplyDelta(nodeId string, delta int) {
-	ls.db[nodeId] += delta
+	//ls.db[nodeId] += delta
 }
 
 func (ls *LocalStore) ManagePollers(ctx context.Context) {
@@ -82,8 +82,8 @@ func (ls *LocalStore) PollNode(pctx context.Context, nodeId string) {
 			return
 		case <-time.After(1 * time.Second):
 			ctx, cancel := context.WithTimeout(pctx, 300*time.Millisecond)
-			if val, err := ls.kv.ReadInt(ctx, nodeId); err == nil {
-				ls.db[nodeId] = val
+			if _, err := ls.kv.ReadInt(ctx, nodeId); err == nil {
+				//ls.db[nodeId] = val
 			} else {
 				ls.l.Printf("Error occurred while reading from the KV store: %s", err)
 			}
@@ -102,8 +102,13 @@ func main() {
 		n:  n,
 		kv: maelstrom.NewSeqKV(n),
 		l:  log.Default(),
-		db: make(map[string]int),
+		db: make(map[string][]int),
 	}
+
+	ls.db["foo"] = append(ls.db["foo"], 5)
+	ls.db["foo"] = append(ls.db["foo"], 6)
+
+	ls.l.Printf("foo: %#v", ls.db)
 
 	if err := ls.Run(); err != nil {
 		log.Fatal(err)

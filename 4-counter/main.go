@@ -82,6 +82,8 @@ func (ls *LocalStore) PollNode(pctx context.Context, nodeId string) {
 			ctx, cancel := context.WithTimeout(pctx, 300*time.Millisecond)
 			if val, err := ls.kv.ReadInt(ctx, nodeId); err == nil {
 				ls.db[nodeId] = val
+			} else {
+				ls.l.Printf("Error occurred while reading from the KV store: %s", err)
 			}
 			cancel()
 		}
