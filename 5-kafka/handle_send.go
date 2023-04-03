@@ -36,5 +36,10 @@ func (ls *LocalStore) HandleSend(msg maelstrom.Message) error {
 	ls.dbMu.Lock()
 	defer ls.dbMu.Unlock()
 
+	ls.db[req.Key] = append(ls.db[req.Key], req.Msg)
+	resp.Offset = len(ls.db[req.Key]) - 1
+
+	ls.l.Printf("RX/send %s=%d\n%#v\n%#v", req.Key, req.Msg, ls.db, resp)
+
 	return ls.n.Reply(msg, resp)
 }

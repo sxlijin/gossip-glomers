@@ -1,10 +1,8 @@
 package main
 
 import (
-	"context"
 	"log"
 	"sync"
-	"time"
 
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
 )
@@ -36,64 +34,12 @@ func (ls *LocalStore) Run() error {
 	ls.n.Handle("commit_offsets", ls.HandleCommitOffsets)
 	ls.n.Handle("list_committed_offsets", ls.HandleListCommittedOffsets)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	go ls.ManagePollers(ctx)
-
 	if err := ls.n.Run(); err != nil {
 		ls.l.Fatal(err)
 		return err
 	}
 
-	cancel()
-
 	return nil
-}
-
-func (ls *LocalStore) Unlocked_ApplyDelta(nodeId string, delta int) {
-	//ls.db[nodeId] += delta
-}
-
-func (ls *LocalStore) ManagePollers(ctx context.Context) {
-	ls.init.Wait()
-
-	pollers := make(map[string]struct{})
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(1 * time.Second):
-			for _, id := range ls.n.NodeIDs() {
-				if id == ls.n.ID() {
-					continue
-				}
-				if _, present := pollers[id]; !present {
-					go ls.PollNode(ctx, id)
-					pollers[id] = struct{}{}
-				}
-			}
-		}
-	}
-}
-
-func (ls *LocalStore) PollNode(pctx context.Context, nodeId string) {
-	for {
-		select {
-		case <-pctx.Done():
-			return
-		case <-time.After(1 * time.Second):
-			ctx, cancel := context.WithTimeout(pctx, 300*time.Millisecond)
-			if _, err := ls.kv.ReadInt(ctx, nodeId); err == nil {
-				//ls.db[nodeId] = val
-			} else {
-				ls.l.Printf("Error occurred while reading from the KV store: %s", err)
-			}
-			cancel()
-		}
-	}
-}
-
-func (ls *LocalStore) PollNeighbors(ctx context.Context) {
-	ls.l.Printf("Attempting to poll neighbors")
 }
 
 func main() {
@@ -104,11 +50,6 @@ func main() {
 		l:  log.Default(),
 		db: make(map[string][]int),
 	}
-
-	ls.db["foo"] = append(ls.db["foo"], 5)
-	ls.db["foo"] = append(ls.db["foo"], 6)
-
-	ls.l.Printf("foo: %#v", ls.db)
 
 	if err := ls.Run(); err != nil {
 		log.Fatal(err)

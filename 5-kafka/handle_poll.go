@@ -35,5 +35,15 @@ func (ls *LocalStore) HandlePoll(msg maelstrom.Message) error {
 	ls.dbMu.Lock()
 	defer ls.dbMu.Unlock()
 
+	for key, offset := range req.Offsets {
+		ret := resp.Msgs[key]
+		for i, val := range ls.db[key][offset:] {
+			ret = append(ret, []int{i + offset, val})
+		}
+		resp.Msgs[key] = ret
+	}
+
+	ls.l.Printf("RX/poll %#v\n%#v", req.Offsets, resp)
+
 	return ls.n.Reply(msg, resp)
 }

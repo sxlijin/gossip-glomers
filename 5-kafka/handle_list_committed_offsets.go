@@ -35,5 +35,9 @@ func (ls *LocalStore) HandleListCommittedOffsets(msg maelstrom.Message) error {
 	ls.dbMu.Lock()
 	defer ls.dbMu.Unlock()
 
+	for _, key := range req.Keys {
+		resp.Offsets[key] = len(ls.db[key])
+	}
+
 	return ls.n.Reply(msg, resp)
 }
