@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
 )
@@ -33,13 +34,34 @@ func (ls *LocalStore) HandleSend(msg maelstrom.Message) error {
 	}
 	resp := makeSendResponse(&req)
 
-	ls.dbMu.Lock()
-	defer ls.dbMu.Unlock()
+	ctx := context.Background()
 
-	ls.db[req.Key] = append(ls.db[req.Key], req.Msg)
-	resp.Offset = len(ls.db[req.Key]) - 1
+	pre := make([]int, 0)
+	createIfNotExists := false
+	if err := ls.kv.ReadInto(ctx, req.Key, &pre); err != nil {
+		if maelstrom.ErrorCode(err) == maelstrom.KeyDoesNotExist {
+			createIfNotExists = true
+		} else {
+			return err
+		}
+	}
+	post := append(pre, req.Msg)
 
-	ls.l.Printf("RX/send %s=%d\n%#v\n%#v", req.Key, req.Msg, ls.db, resp)
+	if !createIfNotExists {
+		pre = nil
+	}
+
+	if err := ls.kv.CompareAndSwap(ctx, req.Key, pre, post, createIfNotExists); err != nil {
+		return err
+	}
+
+	// if (createIfNotExists) {
+	// 	vals := make([]int, 0)
+	// 	ls.kv.ReadInto(ctx, req.Key, &vals)
+	// 	ls.l.Printf("LinKV/read %s -> %#v", req.Key, vals)
+	// }
+
+	ls.l.Printf("\nRX/send %s=%d\nTX/send %#v", req.Key, req.Msg, resp)
 
 	return ls.n.Reply(msg, resp)
 }

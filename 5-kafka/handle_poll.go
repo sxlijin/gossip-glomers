@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
 )
@@ -32,18 +33,20 @@ func (ls *LocalStore) HandlePoll(msg maelstrom.Message) error {
 	}
 	resp := makePollResponse(&req)
 
-	ls.dbMu.Lock()
-	defer ls.dbMu.Unlock()
-
 	for key, offset := range req.Offsets {
 		ret := resp.Msgs[key]
-		for i, val := range ls.db[key][offset:] {
+		vals := make([]int, 0)
+		if err := ls.kv.ReadInto(context.Background(), key, &vals); err != nil {
+			return err
+		}
+		ls.l.Printf("LinKV.Read %s -> %#v", key, vals)
+		for i, val := range vals[offset:] {
 			ret = append(ret, []int{i + offset, val})
 		}
 		resp.Msgs[key] = ret
 	}
 
-	ls.l.Printf("RX/poll %#v\n%#v", req.Offsets, resp)
+	ls.l.Printf("\nRX/poll %#v\nTX/poll %#v", req.Offsets, resp)
 
 	return ls.n.Reply(msg, resp)
 }

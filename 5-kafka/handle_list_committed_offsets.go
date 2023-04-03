@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
 )
@@ -32,11 +33,12 @@ func (ls *LocalStore) HandleListCommittedOffsets(msg maelstrom.Message) error {
 	}
 	resp := makeListCommittedOffsetsResponse(&req)
 
-	ls.dbMu.Lock()
-	defer ls.dbMu.Unlock()
-
 	for _, key := range req.Keys {
-		resp.Offsets[key] = len(ls.db[key])
+		vals := make([]int, 0)
+		if err := ls.kv.ReadInto(context.Background(), key, &vals); err != nil {
+			return err
+		}
+		resp.Offsets[key] = len(vals)
 	}
 
 	return ls.n.Reply(msg, resp)

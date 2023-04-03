@@ -46,7 +46,7 @@ func main() {
 	n := maelstrom.NewNode()
 	ls := LocalStore{
 		n:  n,
-		kv: maelstrom.NewSeqKV(n),
+		kv: maelstrom.NewLinKV(n),
 		l:  log.Default(),
 		db: make(map[string][]int),
 	}
